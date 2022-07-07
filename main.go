@@ -12,11 +12,15 @@ import (
 )
 
 var (
-	red    = color.Red
-	green  = color.Green
-	yellow = color.Yellow
-	client = &http.Client{}
-	azal   = &Azal{url: "https://www.azal.az/az", apiURL: "https://api.azal.travel/azal/searchFlight"}
+	red     = color.Red
+	green   = color.Green
+	yellow  = color.Yellow
+	client  = &http.Client{}
+	azal    = &Azal{url: "https://www.azal.az/az", apiURL: "https://api.azal.travel/azal/searchFlight"}
+	logPath = "/var/log/azal_log.txt"
+	// flight
+	src = "NAJ"
+	dst = "GYD"
 )
 
 func init() {
@@ -40,16 +44,23 @@ func main() {
 		}
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-		green(msg.Text)
+
+		l := fmt.Sprintf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+		go writeLog(l)
 
 		switch msg.Text {
 		case "/start":
-			msg.Text = "I'm Azal bot. I can search tickets for you."
+			msg.Text = "Hello, I'm Azal bot. I can search tickets for you. \nGYD ~ Baku\nNAJ ~ Nakhchivan"
 			bot.Send(msg)
-			fallthrough
+			msg.Text = "Please enter valid date format: YYYY-MM-DD Ex: " + time.Now().Format("2006-01-02")
+			bot.Send(msg)
+			continue
 		case "/hello", "/hi":
 			msg.Text = "Hello, " + update.Message.From.FirstName + "!"
 			bot.Send(msg)
+			continue
+		case "/exchange":
+			toggleCity()
 			continue
 		case "/today":
 			azal.date = time.Now().Format("2006-01-02")
@@ -71,14 +82,17 @@ func main() {
 		msg.ReplyToMessageID = update.Message.MessageID
 
 		bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "Please wait..."))
-		body := fmt.Sprintf(`{"searchType":"NORMAL","lang":"AZ","departurePort":"GYD","arrivalPort":"NAJ","classType":"ECONOMY","directionType":"OW","adultCount":"1","infantCount":"0","childCount":"0","departureDate":"%s","arrivalDate":"0--","isAZ":true}`, azal.date)
 
-		flight := sendRequest(body)
+		body := fmt.Sprintf(`{"searchType":"NORMAL","lang":"AZ","departurePort":"%s","arrivalPort":"%s","classType":"ECONOMY","directionType":"OW","adultCount":"1","infantCount":"0","childCount":"0","departureDate":"%s","arrivalDate":"0--","isAZ":true}`, src, dst, azal.date)
 
-		msg.Text = flight.beautify()
-		if _, err := bot.Send(msg); err != nil {
-			red(err.Error())
-		}
+		go func() {
+			flight := sendRequest(body)
+
+			msg.Text = flight.beautify()
+			if _, err := bot.Send(msg); err != nil {
+				red(err.Error())
+			}
+		}()
 	}
 
 }
@@ -103,16 +117,24 @@ func sendRequest(body string) Flight {
 	var flightResponse Flight
 	err = json.NewDecoder(resp.Body).Decode(&flightResponse)
 
-	if flightResponse.Message.Message != "Ok" {
-		yellow("I can't found tickets for this time")
-		green("but I can found tickets for next time")
-	}
+	/*
+	   if flightResponse.Message.Message != "Ok" {
+	   		yellow("I can't found tickets for this time")
+	   		green("but I can found tickets for next time")
+	   	}
+	*/
 
 	return flightResponse
 }
 
+// toggle function for src and dst
+func toggleCity() {
+	src, dst = dst, src
+}
+
 func (f Flight) beautify() string {
 	var buffer bytes.Buffer
+	buffer.WriteString(src + " -> " + dst + "\n")
 	if f.Message.Message != "Ok" {
 		buffer.WriteString(f.Message.Message + "\n\n")
 	}
@@ -141,6 +163,26 @@ func CheckDate(date string) bool {
 		return false
 	}
 	return true
+}
+
+func writeLog(log string) {
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		_, err := os.Create(logPath)
+		if err != nil {
+			return
+		}
+	}
+
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		red(err.Error())
+	}
+
+	defer f.Close()
+
+	if _, err = f.WriteString(log + "\n"); err != nil {
+		red(err.Error())
+	}
 }
 
 type Flight struct {
