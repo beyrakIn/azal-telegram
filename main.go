@@ -24,7 +24,7 @@ var (
 )
 
 func init() {
-	azal.authKey = "5501056442:AAEruQWKGIqcrwgBm8v5fzwz1uiox_bhcqM" //os.Getenv("TG_AUTH_KEY")
+	azal.authKey = os.Getenv("TG_AUTH_KEY")
 }
 
 func main() {
